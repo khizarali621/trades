@@ -1,21 +1,8 @@
 "use client";
 import React, { useEffect, useState, useRef } from 'react';
-import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js';
-import Zoom from 'chartjs-plugin-zoom';
+// Chart.js and react-chartjs-2 are imported dynamically on the client to avoid server-side
+// evaluation that references `window` / `document` during next build.
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
-
-ChartJS.register(LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
-ChartJS.register(Zoom);
 
 function storageKey(key) { return `tds_${key}`; }
 function loadInitial() { try { const v = localStorage.getItem(storageKey('initial_balance')); return v ? Number(v) : 0; } catch(e){return 0;} }
@@ -61,6 +48,28 @@ export default function Page() {
   const [editingIndex, setEditingIndex] = useState(null);
   const [balances, setBalances] = useState([]);
   const chartRef = useRef(null);
+  const [LineComponent, setLineComponent] = useState(null);
+  const [chartReady, setChartReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (typeof window === 'undefined') return;
+      try {
+        await import('chart.js/auto');
+        const zoom = await import('chartjs-plugin-zoom');
+        // register plugin if available
+        try { const Chart = (await import('chart.js')).Chart; if (Chart && zoom && zoom.default) Chart.register(zoom.default); } catch(e) {}
+        const mod = await import('react-chartjs-2');
+        if (!mounted) return;
+        setLineComponent(() => mod.Line);
+        setChartReady(true);
+      } catch (e) {
+        console.warn('Chart dynamic import failed', e);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     const i = loadInitial();
@@ -365,7 +374,11 @@ export default function Page() {
           </div>
 
           <div className="rounded-lg bg-white" style={{ height: 740 }}>
-            <Line ref={chartRef} options={options} data={data} />
+            {LineComponent && chartReady ? (
+              <LineComponent ref={chartRef} options={options} data={data} />
+            ) : (
+              <div className="p-8 text-center text-sm text-gray-500">Loading chart...</div>
+            )}
           </div>
 
           <div className="mt-3 text-sm text-gray-600">Y-axis max: {yMax} • gap: {yGap}</div>
